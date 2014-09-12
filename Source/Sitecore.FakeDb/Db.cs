@@ -12,11 +12,10 @@ namespace Sitecore.FakeDb
   using Sitecore.FakeDb.Data.Engines;
   using Sitecore.FakeDb.Pipelines;
   using Sitecore.FakeDb.Pipelines.InitFakeDb;
+  using Sitecore.FakeDb.Security.AccessControl;
   using Sitecore.Globalization;
   using Sitecore.Pipelines;
   using Sitecore.Security.AccessControl;
-  using Sitecore.FakeDb.Data.Items;
-  using Sitecore.FakeDb.Security.AccessControl;
 
   public class Db : IDisposable, IEnumerable
   {
@@ -41,6 +40,8 @@ namespace Sitecore.FakeDb
 
     public Db(string databaseName)
     {
+      Assert.ArgumentNotNullOrEmpty(databaseName, "databaseName");
+
       this.database = Database.GetDatabase(databaseName);
       this.dataStorage = new DataStorage(this.database);
 
@@ -87,8 +88,8 @@ namespace Sitecore.FakeDb
     {
       Assert.ArgumentNotNull(item, "item");
 
-      this.CreateTemplate(item);
       this.SetParent(item);
+      this.CreateTemplate(item);
       this.EnsureIsChild(item);
       this.SetFullPath(item);
       this.CreateItem(item);
@@ -222,7 +223,7 @@ namespace Sitecore.FakeDb
         return false;
       }
 
-      var sourceItem = this.DataStorage.FakeItems.Values.LastOrDefault();
+      var sourceItem = this.DataStorage.FakeItems.Values.LastOrDefault(si => si.ParentID == item.ParentID);
       if (sourceItem == null)
       {
         return false;
@@ -232,7 +233,6 @@ namespace Sitecore.FakeDb
       {
         return false;
       }
-
 
       var lastItemTemplateKeys = string.Concat(sourceItem.Fields.InnerFields.Values.Select(f => f.Name));
       var itemTemplateKeys = string.Concat(item.Fields.InnerFields.Values.Select(f => f.Name));
@@ -316,11 +316,6 @@ namespace Sitecore.FakeDb
       var fakeItem = this.DataStorage.GetFakeItem(item.ID);
       fakeItem.Access = item.Access;
 
-      // TODO:[Medium] Changes to DbItem.Access after Db.Add() will be ignored.
-      // TODO:[Minor] Should it be Language.Current?
-      var fake = ItemHelper.CreateInstance(item.ID, this.Database);
-      var uniqueId = fake.GetUniqueId();
-
       var rules = new AccessRuleCollection();
 
       this.FillAccessRules(rules, item.Access, AccessRight.ItemRead, a => a.CanRead);
@@ -330,30 +325,34 @@ namespace Sitecore.FakeDb
       this.FillAccessRules(rules, item.Access, AccessRight.ItemDelete, a => a.CanDelete);
       this.FillAccessRules(rules, item.Access, AccessRight.ItemAdmin, a => a.CanAdmin);
 
-      if (rules.Any())
+      if (!rules.Any())
       {
-        var serializer = new AccessRuleSerializer();
+        return;
+      }
 
-        // TODO: Should not require to check if Security field is exists
-        if (fakeItem.Fields.Any(f => f.ID == FieldIDs.Security))
-        {
-          fakeItem.Fields[FieldIDs.Security].Value = serializer.Serialize(rules);
-        }
-        else
-        {
-          fakeItem.Fields.Add("__Security", serializer.Serialize(rules));
-        }
+      var serializer = new AccessRuleSerializer();
+
+      // TODO: Should not require to check if Security field is exists
+      if (fakeItem.Fields.Any(f => f.ID == FieldIDs.Security))
+      {
+        fakeItem.Fields[FieldIDs.Security].Value = serializer.Serialize(rules);
+      }
+      else
+      {
+        fakeItem.Fields.Add("__Security", serializer.Serialize(rules));
       }
     }
 
     protected virtual void FillAccessRules(AccessRuleCollection rules, DbItemAccess itemAccess, AccessRight accessRight, Func<DbItemAccess, bool?> canAct)
     {
       var canActRest = canAct(itemAccess);
-      if (canActRest != null)
+      if (canActRest == null)
       {
-        var permission = (bool)canActRest ? SecurityPermission.AllowAccess : SecurityPermission.DenyAccess;
-        rules.Add(AccessRule.Create(Context.User, accessRight, PropagationType.Entity, permission));
+        return;
       }
+
+      var permission = (bool)canActRest ? SecurityPermission.AllowAccess : SecurityPermission.DenyAccess;
+      rules.Add(AccessRule.Create(Context.User, accessRight, PropagationType.Entity, permission));
     }
   }
 }
