@@ -136,6 +136,7 @@
     <Compile Include="Security\MembershipSwitcherTest.cs" />
     <Compile Include="Security\FakeMembershipProviderTest.cs" />
     <Compile Include="Security\RoleProviderSwitcherTest.cs" />
+    <Compile Include="Serialization\ManagerTest.cs" />
     <Compile Include="ThreadLocalProviderSwitcherTest.cs" />
     <Compile Include="Links\LinkDatabaseSwitcherTest.cs" />
     <Compile Include="Pipelines\PipelineWatcherProcessorTests.cs" />
